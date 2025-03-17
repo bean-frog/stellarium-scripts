@@ -1,0 +1,255 @@
+LabelMgr.deleteAllLabels();
+HighlightMgr.cleanHighlightList();
+
+var iauNames = {
+  "Ari": "Aries",
+  "Tau": "Taurus",
+  "Gem": "Gemini",
+  "Cnc": "Cancer",
+  "Leo": "Leo",
+  "Vir": "Virgo",
+  "Lib": "Libra",
+  "Sco": "Scorpius",
+  "Sgr": "Sagittarius",
+  "Cap": "Capricornus",
+  "Aqr": "Aquarius",
+  "Psc": "Pisces",
+  "Oph": "Ophiuchus"
+};
+
+// Constellation boundary ecliptic longitudes (J2000)
+var eclon = {
+  "Psc": 28.687,
+  "Ari": 53.417,
+  "Tau": 90.140,
+  "Gem": 117.988,
+  "Cnc": 138.038,
+  "Leo": 173.851,
+  "Vir": 217.810,
+  "Lib": 241.047,
+  "Sco": 247.638,
+  "Oph": 266.238,
+  "Sgr": 299.656,
+  "Cap": 327.488,
+  "Aqr": 351.650
+};
+
+// Helper functions for coordinate conversion
+function degToHMS(deg) {
+  var totalHours = deg / 15.0;
+  var hours = Math.floor(totalHours);
+  var totalMinutes = (totalHours - hours) * 60;
+  var minutes = Math.floor(totalMinutes);
+  var seconds = Math.floor((totalMinutes - minutes) * 60);
+  return hours + "h" + minutes + "m" + seconds + "s";
+}
+function degToDMS(deg) {
+  var sign = (deg >= 0) ? "+" : "-";
+  deg = Math.abs(deg);
+  var degrees = Math.floor(deg);
+  var totalMinutes = (deg - degrees) * 60;
+  var minutes = Math.floor(totalMinutes);
+  var seconds = Math.floor((totalMinutes - minutes) * 60);
+  return sign + degrees + "d" + minutes + "m" + seconds + "s";
+}
+
+// Ra/Dec values used to place highlight markers for boundaries (adjusted later)
+var boundsRaDec = {
+  "Psc": [25.0, 10.381],
+  "Ari": [49.25, 18.181],
+  "Tau": [88.25, 23.430],
+  "Gem": [118.25, 20.903],
+  "Cnc": [138.75, 15.955],
+  "Leo": [172.75, 3.134],
+  "Vir": [213.75, -13.541],
+  "Lib": [237.092, -20.0],
+  "Sco": [244.0, -21.289],
+  "Oph": [264.0, -23.324],
+  "Sgr": [300.0, -20.580],
+  "Cap": [328.0, -12.941],
+  "Aqr": [350.723, -4.0]
+};
+
+var SHIFT_DEG = -2.15;
+
+// Place highlight markers for constellation boundaries
+for (var key in boundsRaDec) {
+    if (boundsRaDec.hasOwnProperty(key)) {
+        var coords = boundsRaDec[key];
+        var raDeg = coords[0];
+        var decDeg = coords[1];
+        raDeg -= SHIFT_DEG;
+        if (raDeg < 0) {
+            raDeg += 360;
+        }
+        var raStr  = degToHMS(raDeg);
+        var decStr = degToDMS(decDeg);
+        HighlightMgr.addPointRaDec(raStr, decStr);
+    }
+}
+
+var counter = 200;
+function label(text, x_offset, size, color) {
+    LabelMgr.labelScreen(text, 300 + x_offset, counter, true, size, color);
+    counter += 20;
+}
+
+function parseTime(timeStr) {
+    const match = timeStr.match(/(\d+)h(\d+)m/);
+    const hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    return hours * 60 + minutes; 
+}
+function formatTime(minutes) {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${hours}h${mins}m`;
+}
+function calculateDayLength(riseTime, setTime) {
+    const riseMinutes = parseTime(riseTime);
+    const setMinutes = parseTime(setTime);
+    const dayLengthMinutes = setMinutes - riseMinutes;
+    return formatTime(dayLengthMinutes);
+}
+
+// ----- New Helper Functions for Ecliptic Conversion & Symbol View -----
+
+// Convert equatorial (RA, Dec in degrees) to ecliptic longitude (degrees)
+function equatorialToEcliptic(raDeg, decDeg) {
+    var epsilon = 23.4392911 * Math.PI/180; // obliquity of the ecliptic
+    var raRad = raDeg * Math.PI/180;
+    var decRad = decDeg * Math.PI/180;
+    var y = Math.sin(raRad) * Math.cos(epsilon) + Math.tan(decRad) * Math.sin(epsilon);
+    var x = Math.cos(raRad);
+    var lambdaRad = Math.atan2(y, x);
+    var lambdaDeg = lambdaRad * 180/Math.PI;
+    if (lambdaDeg < 0) {
+        lambdaDeg += 360;
+    }
+    return lambdaDeg;
+}
+
+// Build sorted boundary array from eclon (by increasing longitude)
+var sortedBoundaries = [];
+for (var key in eclon) {
+    if (eclon.hasOwnProperty(key)) {
+         sortedBoundaries.push({ key: key, lon: eclon[key] });
+    }
+}
+sortedBoundaries.sort(function(a, b) { return a.lon - b.lon; });
+
+// Given an object's ecliptic longitude L, determine the two adjacent boundaries
+// and calculate how many degrees above the lower and below the upper boundary it is.
+function getBoundaryDistances(L) {
+    var lowerBoundary, upperBoundary, lowerKey, upperKey, distLower, distUpper;
+    if (L < sortedBoundaries[0].lon) {
+         var L_adjusted = L + 360;
+         lowerBoundary = sortedBoundaries[sortedBoundaries.length - 1].lon;
+         lowerKey = sortedBoundaries[sortedBoundaries.length - 1].key;
+         upperBoundary = sortedBoundaries[0].lon + 360;
+         upperKey = sortedBoundaries[0].key;
+         distLower = L_adjusted - lowerBoundary;
+         distUpper = upperBoundary - L_adjusted;
+    } else {
+         for (var i = 0; i < sortedBoundaries.length - 1; i++) {
+             if (L >= sortedBoundaries[i].lon && L < sortedBoundaries[i+1].lon) {
+                  lowerBoundary = sortedBoundaries[i].lon;
+                  lowerKey = sortedBoundaries[i].key;
+                  upperBoundary = sortedBoundaries[i+1].lon;
+                  upperKey = sortedBoundaries[i+1].key;
+                  distLower = L - lowerBoundary;
+                  distUpper = upperBoundary - L;
+                  break;
+             }
+         }
+         if (typeof lowerBoundary === 'undefined') {
+             lowerBoundary = sortedBoundaries[sortedBoundaries.length - 1].lon;
+             lowerKey = sortedBoundaries[sortedBoundaries.length - 1].key;
+             upperBoundary = sortedBoundaries[0].lon + 360;
+             upperKey = sortedBoundaries[0].key;
+             distLower = L - lowerBoundary;
+             distUpper = upperBoundary - L;
+         }
+    }
+    return {
+         lowerKey: lowerKey,
+         upperKey: upperKey,
+         distLower: distLower,
+         distUpper: distUpper
+    };
+}
+
+// Create a symbol view for the object’s position within its constellation.
+// The view consists of a left boundary (|), five spaces (the scale),
+// and a right boundary (|). The space nearest the object's relative position
+// is replaced with a period (.).
+function getSymbolView(distLower, distUpper) {
+    var total = distLower + distUpper;
+    var fraction = total > 0 ? distLower / total : 0;
+    var pos = Math.round(fraction * 5); // Round instead of floor to place the dot more accurately
+    
+    // Ensure the dot stays within bounds
+    if (pos < 0) pos = 0;
+    if (pos > 5) pos = 5;
+    
+    var segments = ["|", " ", " ", " ", " ", " ", "|"]; // Always start and end with pipes
+    
+    // Place the dot at the appropriate position
+    if (pos === 0) {
+        segments[0] = ".";
+    } else if (pos === 5) {
+        segments[6] = ".";
+    } else {
+        segments[pos] = ".";
+    }
+    
+    return segments.join(""); 
+}
+
+
+// ----- End of New Helper Functions -----
+
+
+// Process the Sun
+var sun = core.selectObjectByName("Sun", false);
+var sunInfo = core.getSelectedObjectInfo(sun);
+core.debug(JSON.stringify(sunInfo));
+label(sunInfo.name, 0, 20, "#ffffff");
+label("in " + iauNames[sunInfo.iauConstellation], 20, 18, "#ffffff");
+label("Rise: " + sunInfo.rise, 20, 18, "#ffffff");
+label("Set: " + sunInfo.set, 20, 18, "#ffffff");
+label("Day: " + calculateDayLength(sunInfo.rise, sunInfo.set), 20, 18, "#ffffff");
+
+// Compute Sun’s ecliptic longitude and its boundary distances
+// (Assumes sunInfo contains properties "ra" and "dec" in degrees)
+var sunEclLon = equatorialToEcliptic(sunInfo.ra, sunInfo.dec);
+var sunBoundaries = getBoundaryDistances(sunEclLon);
+var sunSymbol = getSymbolView(sunBoundaries.distLower, sunBoundaries.distUpper);
+core.debug("Sun ecliptic longitude: " + sunEclLon.toFixed(2) + "°");
+core.debug("Sun is " + sunBoundaries.distLower.toFixed(2) + "° above the lower boundary (" + sunBoundaries.lowerKey + ")");
+core.debug("Sun is " + sunBoundaries.distUpper.toFixed(2) + "° below the upper boundary (" + sunBoundaries.upperKey + ")");
+core.debug("Sun symbol view: " + sunSymbol);
+label("Position: " + sunSymbol, 20, 18, "#ffffff");
+
+// Process selected planets
+var objects = SolarSystem.getObjectsList("planet");
+var planets = ["Mercury", "Venus", "Mars", "Jupiter", "Saturn"];
+objects.forEach(item => {
+    if (planets.indexOf(item) > -1) { 
+        var sel = core.selectObjectByName(item, false);
+        var objectInfo = core.getSelectedObjectInfo(sel);
+        label(objectInfo.name, 0, 20, "#ffffff");
+        var constellationName = iauNames[objectInfo.iauConstellation];
+        label(constellationName, 20, 18, "#ffffff");
+        
+        // Compute planet's ecliptic longitude and boundary distances
+        var planetEclLon = equatorialToEcliptic(objectInfo.ra, objectInfo.dec);
+        var planetBoundaries = getBoundaryDistances(planetEclLon);
+        var planetSymbol = getSymbolView(planetBoundaries.distLower, planetBoundaries.distUpper);
+        core.debug(objectInfo.name + " ecliptic longitude: " + planetEclLon.toFixed(2) + "°");
+        core.debug(objectInfo.name + " is " + planetBoundaries.distLower.toFixed(2) + "° above the lower boundary (" + planetBoundaries.lowerKey + ")");
+        core.debug(objectInfo.name + " is " + planetBoundaries.distUpper.toFixed(2) + "° below the upper boundary (" + planetBoundaries.upperKey + ")");
+        core.debug(objectInfo.name + " symbol view: " + planetSymbol);
+        label("Position: " + planetSymbol, 20, 18, "#ffffff");
+    }
+});
