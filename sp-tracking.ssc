@@ -1,6 +1,18 @@
+/*
+Paly Astrophysics Sun/Planet tracking
+*/
+
+
+// cleanup
 LabelMgr.deleteAllLabels();
 HighlightMgr.cleanHighlightList();
 
+// color constants
+var POS_COLOR = "#ffaa00"
+var OBJ_COLOR = "#ffffff"
+var CON_COLOR = "#ffffff"
+
+// abbreviation definitions
 var iauNames = {
   "Ari": "Aries",
   "Tau": "Taurus",
@@ -17,7 +29,7 @@ var iauNames = {
   "Oph": "Ophiuchus"
 };
 
-// Constellation boundary ecliptic longitudes (J2000)
+// J2000 ecliptic longitudes
 var eclon = {
   "Psc": 28.687,
   "Ari": 53.417,
@@ -34,7 +46,7 @@ var eclon = {
   "Aqr": 351.650
 };
 
-// Helper functions for coordinate conversion
+// coordinate conversion functions
 function degToHMS(deg) {
   var totalHours = deg / 15.0;
   var hours = Math.floor(totalHours);
@@ -53,32 +65,33 @@ function degToDMS(deg) {
   return sign + degrees + "d" + minutes + "m" + seconds + "s";
 }
 
-// Ra/Dec values used to place highlight markers for boundaries (adjusted later)
+// constellation bounds (RA/Dec) as decimal
 var boundsRaDec = {
-  "Psc": [25.0, 10.381],
-  "Ari": [49.25, 18.181],
-  "Tau": [88.25, 23.430],
-  "Gem": [118.25, 20.903],
-  "Cnc": [138.75, 15.955],
-  "Leo": [172.75, 3.134],
-  "Vir": [213.75, -13.541],
-  "Lib": [237.092, -20.0],
-  "Sco": [244.0, -21.289],
-  "Oph": [264.0, -23.324],
-  "Sgr": [300.0, -20.580],
-  "Cap": [328.0, -12.941],
-  "Aqr": [350.723, -4.0]
+  "Psc": [24.9, 11.15], 
+  "Ari": [49.25, 18.73],
+  "Tau": [88.39, 23.430],
+  "Gem": [118.29, 20.51], 
+  "Cnc": [138.68, 15.33],
+  "Leo": [172.55, 2.3],
+  "Vir": [213.67, -14.2],
+  "Lib": [237.15, -20.45],
+  "Sco": [244.1, -21.63],
+  "Oph": [264.15, -23.39],
+  "Sgr": [300.04, -20.15],
+  "Cap": [327.9, -12.19],
+  "Aqr": [350.55, -3.21]
 };
 
 var SHIFT_DEG = -2.15;
 
-// Place highlight markers for constellation boundaries
+// debug: highlights on boundaries
 for (var key in boundsRaDec) {
     if (boundsRaDec.hasOwnProperty(key)) {
         var coords = boundsRaDec[key];
         var raDeg = coords[0];
         var decDeg = coords[1];
         raDeg -= SHIFT_DEG;
+        boundsRaDec[key][0] -= SHIFT_DEG;
         if (raDeg < 0) {
             raDeg += 360;
         }
@@ -88,7 +101,7 @@ for (var key in boundsRaDec) {
     }
 }
 
-var counter = 200;
+var counter = 200; //label positioning
 function label(text, x_offset, size, color) {
     LabelMgr.labelScreen(text, 300 + x_offset, counter, true, size, color);
     counter += 20;
@@ -112,20 +125,27 @@ function calculateDayLength(riseTime, setTime) {
     return formatTime(dayLengthMinutes);
 }
 
-// ----- New Helper Functions for Ecliptic Conversion & Symbol View -----
-
+// mega nerd math that i barely understand
 // Convert equatorial (RA, Dec in degrees) to ecliptic longitude (degrees)
 function equatorialToEcliptic(raDeg, decDeg) {
-    var epsilon = 23.4392911 * Math.PI/180; // obliquity of the ecliptic
+    // Correct obliquity of the ecliptic for J2000.0
+    var epsilon = 23.4392911 * Math.PI/180;
+    
+    // Convert RA and Dec to radians
     var raRad = raDeg * Math.PI/180;
     var decRad = decDeg * Math.PI/180;
-    var y = Math.sin(raRad) * Math.cos(epsilon) + Math.tan(decRad) * Math.sin(epsilon);
-    var x = Math.cos(raRad);
-    var lambdaRad = Math.atan2(y, x);
+    
+    // Calculate ecliptic longitude 
+    var sinLambda = Math.sin(raRad) * Math.cos(epsilon) + Math.tan(decRad) * Math.sin(epsilon);
+    var cosLambda = Math.cos(raRad);
+    var lambdaRad = Math.atan2(sinLambda, cosLambda);
+    
+    // Convert back to degrees and ensure the value is in [0, 360)
     var lambdaDeg = lambdaRad * 180/Math.PI;
     if (lambdaDeg < 0) {
         lambdaDeg += 360;
     }
+    
     return lambdaDeg;
 }
 
@@ -141,87 +161,102 @@ sortedBoundaries.sort(function(a, b) { return a.lon - b.lon; });
 // Given an object's ecliptic longitude L, determine the two adjacent boundaries
 // and calculate how many degrees above the lower and below the upper boundary it is.
 function getBoundaryDistances(L) {
+    // Ensure L is within [0, 360)
+    while (L < 0) L += 360;
+    while (L >= 360) L -= 360;
+    
     var lowerBoundary, upperBoundary, lowerKey, upperKey, distLower, distUpper;
+    
+    // Handle case where L is before the first boundary or after the last boundary
     if (L < sortedBoundaries[0].lon) {
-         var L_adjusted = L + 360;
-         lowerBoundary = sortedBoundaries[sortedBoundaries.length - 1].lon;
-         lowerKey = sortedBoundaries[sortedBoundaries.length - 1].key;
-         upperBoundary = sortedBoundaries[0].lon + 360;
-         upperKey = sortedBoundaries[0].key;
-         distLower = L_adjusted - lowerBoundary;
-         distUpper = upperBoundary - L_adjusted;
-    } else {
-         for (var i = 0; i < sortedBoundaries.length - 1; i++) {
-             if (L >= sortedBoundaries[i].lon && L < sortedBoundaries[i+1].lon) {
-                  lowerBoundary = sortedBoundaries[i].lon;
-                  lowerKey = sortedBoundaries[i].key;
-                  upperBoundary = sortedBoundaries[i+1].lon;
-                  upperKey = sortedBoundaries[i+1].key;
-                  distLower = L - lowerBoundary;
-                  distUpper = upperBoundary - L;
-                  break;
-             }
-         }
-         if (typeof lowerBoundary === 'undefined') {
-             lowerBoundary = sortedBoundaries[sortedBoundaries.length - 1].lon;
-             lowerKey = sortedBoundaries[sortedBoundaries.length - 1].key;
-             upperBoundary = sortedBoundaries[0].lon + 360;
-             upperKey = sortedBoundaries[0].key;
-             distLower = L - lowerBoundary;
-             distUpper = upperBoundary - L;
-         }
+        // Object is between the last and first boundaries, wrapping around 0°
+        lowerBoundary = sortedBoundaries[sortedBoundaries.length - 1].lon;
+        lowerKey = sortedBoundaries[sortedBoundaries.length - 1].key;
+        upperBoundary = sortedBoundaries[0].lon;
+        upperKey = sortedBoundaries[0].key;
+        
+        // Calculate distances correctly handling the wrapping at 360°
+        distLower = (L + 360) - lowerBoundary;
+        if (distLower >= 360) distLower -= 360;
+        
+        distUpper = upperBoundary - L;
+        if (distUpper < 0) distUpper += 360;
+    } 
+    else if (L >= sortedBoundaries[sortedBoundaries.length - 1].lon) {
+        // Object is between the last and first boundaries
+        lowerBoundary = sortedBoundaries[sortedBoundaries.length - 1].lon;
+        lowerKey = sortedBoundaries[sortedBoundaries.length - 1].key;
+        upperBoundary = sortedBoundaries[0].lon + 360; // Add 360 to handle the wrapping
+        upperKey = sortedBoundaries[0].key;
+        
+        distLower = L - lowerBoundary;
+        distUpper = upperBoundary - L;
     }
+    else {
+        // Find the two boundaries that the object is between
+        for (var i = 0; i < sortedBoundaries.length - 1; i++) {
+            if (L >= sortedBoundaries[i].lon && L < sortedBoundaries[i+1].lon) {
+                lowerBoundary = sortedBoundaries[i].lon;
+                lowerKey = sortedBoundaries[i].key;
+                upperBoundary = sortedBoundaries[i+1].lon;
+                upperKey = sortedBoundaries[i+1].key;
+                
+                distLower = L - lowerBoundary;
+                distUpper = upperBoundary - L;
+                break;
+            }
+        }
+    }
+    
     return {
-         lowerKey: lowerKey,
-         upperKey: upperKey,
-         distLower: distLower,
-         distUpper: distUpper
+        lowerKey: lowerKey,
+        upperKey: upperKey,
+        distLower: distLower,
+        distUpper: distUpper,
+        totalWidth: distLower + distUpper
     };
 }
 
-// Create a symbol view for the object’s position within its constellation.
-// The view consists of a left boundary (|), five spaces (the scale),
-// and a right boundary (|). The space nearest the object's relative position
-// is replaced with a period (.).
 function getSymbolView(distLower, distUpper) {
     var total = distLower + distUpper;
-    var fraction = total > 0 ? distLower / total : 0;
-    var pos = Math.round(fraction * 5); // Round instead of floor to place the dot more accurately
     
-    // Ensure the dot stays within bounds
-    if (pos < 0) pos = 0;
-    if (pos > 5) pos = 5;
+    if (total <= 0) return "|    |    |    |    |";
     
-    var segments = ["|", " ", " ", " ", " ", " ", "|"]; // Always start and end with pipes
+    // Calculate the relative position of the object between boundaries
+    var fraction = distLower / total;
     
-    // Place the dot at the appropriate position
-    if (pos === 0) {
-        segments[0] = ".";
-    } else if (pos === 5) {
-        segments[6] = ".";
-    } else {
-        segments[pos] = ".";
+    var positions = 20;
+    var dotPosition = Math.round(fraction * positions);
+    
+    // Ensure dotPosition is within valid range
+    if (dotPosition < 0) dotPosition = 0;
+    if (dotPosition > positions) dotPosition = positions;
+    
+    var result = "";
+    for (var i = 0; i <= positions; i++) {
+        if (i % 5 === 0) {
+            result += "|"; // Boundary marker
+        } else if (i === dotPosition) {
+            result += "•"; // Object position
+        } else {
+            result += " "; 
+        }
     }
     
-    return segments.join(""); 
+    return result;
 }
 
 
-// ----- End of New Helper Functions -----
-
-
-// Process the Sun
+// Sun labels
 var sun = core.selectObjectByName("Sun", false);
 var sunInfo = core.getSelectedObjectInfo(sun);
 core.debug(JSON.stringify(sunInfo));
-label(sunInfo.name, 0, 20, "#ffffff");
-label("in " + iauNames[sunInfo.iauConstellation], 20, 18, "#ffffff");
-label("Rise: " + sunInfo.rise, 20, 18, "#ffffff");
-label("Set: " + sunInfo.set, 20, 18, "#ffffff");
-label("Day: " + calculateDayLength(sunInfo.rise, sunInfo.set), 20, 18, "#ffffff");
+label(sunInfo.name, 0, 20, OBJ_COLOR);
+label("Rise: " + sunInfo.rise, 20, 18, OBJ_COLOR);
+label("Set: " + sunInfo.set, 20, 18, OBJ_COLOR);
+label("Day: " + calculateDayLength(sunInfo.rise, sunInfo.set), 20, 18, OBJ_COLOR);
+label(iauNames[sunInfo.iauConstellation], 20, 18, CON_COLOR);
 
-// Compute Sun’s ecliptic longitude and its boundary distances
-// (Assumes sunInfo contains properties "ra" and "dec" in degrees)
 var sunEclLon = equatorialToEcliptic(sunInfo.ra, sunInfo.dec);
 var sunBoundaries = getBoundaryDistances(sunEclLon);
 var sunSymbol = getSymbolView(sunBoundaries.distLower, sunBoundaries.distUpper);
@@ -229,20 +264,18 @@ core.debug("Sun ecliptic longitude: " + sunEclLon.toFixed(2) + "°");
 core.debug("Sun is " + sunBoundaries.distLower.toFixed(2) + "° above the lower boundary (" + sunBoundaries.lowerKey + ")");
 core.debug("Sun is " + sunBoundaries.distUpper.toFixed(2) + "° below the upper boundary (" + sunBoundaries.upperKey + ")");
 core.debug("Sun symbol view: " + sunSymbol);
-label("Position: " + sunSymbol, 20, 18, "#ffffff");
+label(sunSymbol, 20, 18, POS_COLOR);
 
-// Process selected planets
+// Planet labels
 var objects = SolarSystem.getObjectsList("planet");
 var planets = ["Mercury", "Venus", "Mars", "Jupiter", "Saturn"];
 objects.forEach(item => {
     if (planets.indexOf(item) > -1) { 
         var sel = core.selectObjectByName(item, false);
         var objectInfo = core.getSelectedObjectInfo(sel);
-        label(objectInfo.name, 0, 20, "#ffffff");
+        label(objectInfo.name, 0, 20, OBJ_COLOR);
         var constellationName = iauNames[objectInfo.iauConstellation];
-        label(constellationName, 20, 18, "#ffffff");
-        
-        // Compute planet's ecliptic longitude and boundary distances
+        label(constellationName, 20, 18, CON_COLOR);
         var planetEclLon = equatorialToEcliptic(objectInfo.ra, objectInfo.dec);
         var planetBoundaries = getBoundaryDistances(planetEclLon);
         var planetSymbol = getSymbolView(planetBoundaries.distLower, planetBoundaries.distUpper);
@@ -250,6 +283,6 @@ objects.forEach(item => {
         core.debug(objectInfo.name + " is " + planetBoundaries.distLower.toFixed(2) + "° above the lower boundary (" + planetBoundaries.lowerKey + ")");
         core.debug(objectInfo.name + " is " + planetBoundaries.distUpper.toFixed(2) + "° below the upper boundary (" + planetBoundaries.upperKey + ")");
         core.debug(objectInfo.name + " symbol view: " + planetSymbol);
-        label("Position: " + planetSymbol, 20, 18, "#ffffff");
+        label(planetSymbol, 20, 18, POS_COLOR);
     }
 });
