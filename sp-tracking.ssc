@@ -265,12 +265,13 @@ core.debug("Sun is " + sunBoundaries.distLower.toFixed(2) + "° above the lower 
 core.debug("Sun is " + sunBoundaries.distUpper.toFixed(2) + "° below the upper boundary (" + sunBoundaries.upperKey + ")");
 core.debug("Sun symbol view: " + sunSymbol);
 label(sunSymbol, 20, 18, POS_COLOR);
-
 // Planet labels
 var objects = SolarSystem.getObjectsList("planet");
 var planets = ["Mercury", "Venus", "Mars", "Jupiter", "Saturn"];
-objects.forEach(item => {
-    if (planets.indexOf(item) > -1) { 
+
+for (var i = 0; i < planets.length; i++) {
+    var item = planets[i];
+    if (objects.indexOf(item) > -1) {
         var sel = core.selectObjectByName(item, false);
         var objectInfo = core.getSelectedObjectInfo(sel);
         label(objectInfo.name, 0, 20, OBJ_COLOR);
@@ -285,4 +286,4 @@ objects.forEach(item => {
         core.debug(objectInfo.name + " symbol view: " + planetSymbol);
         label(planetSymbol, 20, 18, POS_COLOR);
     }
-});
+}
