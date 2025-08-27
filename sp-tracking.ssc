@@ -1,26 +1,21 @@
+// Name: SPTrackingHelper V2
+// Version: 2.0.0
+// License: MIT
+// Description: Calculate the position of the sun and several planets within their current constellation bounds.
 
-// cleanup
-LabelMgr.deleteAllLabels();
-HighlightMgr.cleanHighlightList();
+// READ THIS
+// the following variables are some visual configurations you can make.
+// Once you make changes, you need to re-run the script. Use ctrl-s to save the file, thereby saving changes for next time.
 
-var labelcounter = 200;  //counter for label spacing
-function label(text, x_offset, size, color) {
-    LabelMgr.labelScreen(text, 300 + x_offset, labelcounter, true, size, color);
-    labelcounter += 20;
-}
+const POS_COLOR = "#ffaa00"; // color of the representation of object pos within the constellation
+const OBJ_COLOR = "#ffffff"; // color of the object's name
+const CON_COLOR = "#ffffff"; // color of the constellation name
+const B = "┃"                // Boundary character between each quarter of the constellation
+const S = " "                // Spacer character in between borders
+const OBJECT_CHAR = "●";     // Character representing the object (planet or the Sun)
+const globalXOffset = 0;     // x-offset of all labels drawn by this script
 
-// constants
-var POS_COLOR = "#ffaa00"
-var OBJ_COLOR = "#ffffff"
-var CON_COLOR = "#ffffff"
-var B = "|"; //boundary char
-var S = " "; //spacer char
-var OBJECT_CHAR = "●"
-
-//  base ascii array
-var BASE_ASCII = [B,S,S,S,S,S,S,S,B,S,S,S,S,S,S,S,B,S,S,S,S,S,S,S,B,S,S,S,S,S,S,S,B]
-
-// abbreviation definitions
+// IAU Abbreviations
 var iauNames = {
   "Ari": "Aries",
   "Tau": "Taurus",
@@ -37,160 +32,51 @@ var iauNames = {
   "Oph": "Ophiuchus"
 };
 
-// constellation bounds (RA/Dec) as decimal
-// "abbr": [ [ra1, dec1], [ra2, dec2] ]
+// Constellation bounds (RA/Dec)
 var boundsRaDec = {
-  "Psc": [
-    [27, 11.15],
-    [352.55, -3.21]
-  ],
-  "Ari": [
-    [51.4, 18.73],
-    [27, 11.15]
-  ],
-  "Tau": [
-    [90.5, 23.430],
-    [51.4, 18.73]
-  ],
-  "Gem": [
-    [120.45, 20.51],
-    [90.5, 23.430]
-  ],
-  "Cnc": [
-    [140.81, 15.33],
-    [120.45, 20.51] 
-  ],
-  "Leo": [
-    [174.7, 2.3],
-    [140.81, 15.33]
-  ],
-  "Vir": [
-    [215.8, -14.2],
-    [174.7, 2.3]
-  ],
-  "Lib": [
-    [239.4, -20.45],
-    [215.8, -14.2]
-  ],
-  "Sco": [
-    [246.2, -21.63],
-    [239.4, -20.45]
-  ],
-  "Oph": [
-    [266.3, -23.39],
-    [246.2, -21.63]
-  ],
-  "Sgr": [
-    [302.2, -20.15],
-    [266.3, -23.39]
-  ],
-  "Cap": [
-    [330.05, -12.19],
-    [302.2, -20.15]
-  ],
-  "Aqr": [
-    [354.75, -3.21], // offset slightly because of a weird stupid bug that im too tired to go fix (TODO: go fix)
-    [330.05, -12.19]
-  ]
+  "Psc": [[27, 11.15], [352.55, -3.21]],
+  "Ari": [[51.4, 18.73], [27, 11.15]],
+  "Tau": [[90.5, 23.43], [51.4, 18.73]],
+  "Gem": [[120.45, 20.51], [90.5, 23.43]],
+  "Cnc": [[140.81, 15.33], [120.45, 20.51]],
+  "Leo": [[174.7, 2.3], [140.81, 15.33]],
+  "Vir": [[215.8, -14.2], [174.7, 2.3]],
+  "Lib": [[239.4, -20.45], [215.8, -14.2]],
+  "Sco": [[246.2, -21.63], [239.4, -20.45]],
+  "Oph": [[266.3, -23.39], [246.2, -21.63]],
+  "Sgr": [[302.2, -20.15], [266.3, -23.39]],
+  "Cap": [[330.05, -12.19], [302.2, -20.15]],
+  "Aqr": [[354.75, -3.21], [330.05, -12.19]]
 };
 
-// calculate integer position
-function mapObjectPosition(bounds, objectPos) {
-    // deg -> rad helper function
-    const toRadians = function(degrees) {
-        return degrees * Math.PI / 180;
-    };
-    
-    // all to radians
-    const ra1 = toRadians(bounds[0][0]);
-    const dec1 = toRadians(bounds[0][1]);
-    const ra2 = toRadians(bounds[1][0]);
-    const dec2 = toRadians(bounds[1][1]);
-    const raObj = toRadians(objectPos[0]);
-    const decObj = toRadians(objectPos[1]);
-    
-    // angular distance (theta) from first bound to object position
-    const cosTheta1 = Math.sin(dec1) * Math.sin(decObj) + 
-                      Math.cos(dec1) * Math.cos(decObj) * Math.cos(raObj - ra1);
-    const theta1 = Math.acos(Math.max(-1, Math.min(1, cosTheta1))); // Clamp to avoid floating point bs
-    
-    // angular distance (theta) from object position to second bound
-    const cosTheta2 = Math.sin(decObj) * Math.sin(dec2) + 
-                      Math.cos(decObj) * Math.cos(dec2) * Math.cos(ra2 - raObj);
-    const theta2 = Math.acos(Math.max(-1, Math.min(1, cosTheta2))); // Clamp to avoid floating point bs
-    
-    // angular distance (theta) between bounds
-    const cosTotal = Math.sin(dec1) * Math.sin(dec2) + 
-                     Math.cos(dec1) * Math.cos(dec2) * Math.cos(ra2 - ra1);
-    const thetaTotal = Math.acos(Math.max(-1, Math.min(1, cosTotal))); // Clamp to avoid floating point bs
-    
-    // proportional distance
-    const proportion = theta1 / thetaTotal;
-    
-    // map to 32-pt scale
-    return Math.round(proportion * 32);
+// UI Class
+function UIHandler(startPos) {
+  this.labelPos = startPos || 0;
+  LabelMgr.deleteAllLabels();
+  HighlightMgr.cleanHighlightList();
+}
+UIHandler.prototype.basicLabel = function (text, xOffset, textSize, textColor) {
+  LabelMgr.labelScreen(text, 300 + xOffset, this.labelPos, true, textSize, textColor);
+  this.labelPos += textSize + 5;
+}
+UIHandler.prototype.ASCIILabel = function (posInt) {
+  var BASE_ASCII = [B, S, S, S, S, S, S, S, B, S, S, S, S, S, S, S, B, S, S, S, S, S, S, S, B, S, S, S, S, S, S, S, B];
+  var ascii = [...BASE_ASCII];
+  if (posInt < 0) { posInt = 0; }
+  else if (posInt > 32) { posInt = 32; }
+  ascii[posInt] = OBJECT_CHAR;
+  return ascii.join('');
 }
 
-function getAscii(posInt) {
-    var ascii = [...BASE_ASCII]; 
-    if (posInt < 0) { posInt = 0; } 
-    else if (posInt > 32) { posInt = 32; }
-    ascii[posInt] = OBJECT_CHAR;
-    return ascii.join(''); 
+// Conversion Class
+function Conversions() { return; }
+Conversions.prototype.degToRad = function (deg) {
+  return deg * (Math.PI / 180);
 }
-function parseTime(timeStr) {
-    const match = timeStr.match(/(\d+)h(\d+)m/);
-    const hours = parseInt(match[1], 10);
-    const minutes = parseInt(match[2], 10);
-    return hours * 60 + minutes; 
+Conversions.prototype.radToDeg = function (rad) {
+  return rad * (180 / Math.PI);
 }
-function formatTime(minutes) {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h${mins}m`;
-}
-function calculateDayLength(riseTime, setTime) {
-    const riseMinutes = parseTime(riseTime);
-    const setMinutes = parseTime(setTime);
-    const dayLengthMinutes = setMinutes - riseMinutes;
-    return formatTime(dayLengthMinutes);
-}
-// sun labels
-
-var sun = core.selectObjectByName("Sun", false)
-	var sunInfo = core.getSelectedObjectInfo(sun)
-	label(sunInfo.name, 0, 20, OBJ_COLOR)
-	label("Rise: " + sunInfo.rise, 20, 18, OBJ_COLOR);
-	label("Set: " + sunInfo.set, 20, 18, OBJ_COLOR);
-	label("Day: " + calculateDayLength(sunInfo.rise, sunInfo.set), 20, 18, OBJ_COLOR);
-	var sunConName = iauNames[sunInfo.iauConstellation]
-	label(sunConName, 20, 18, CON_COLOR)
-	var sunConBounds = boundsRaDec[sunInfo.iauConstellation]
-	var sunPos = [sunInfo.ra, sunInfo.dec]
-	var sunPosInt = mapObjectPosition(sunConBounds, sunPos)
-	label(getAscii(sunPosInt), 20, 18, POS_COLOR)
-
-// planet labels
-var planets = ["Mercury", "Venus", "Mars", "Jupiter", "Saturn"] 
-for (var i = 0; i < planets.length; i++) {
-	var item = planets[i];
-	if (planets.indexOf(item)> -1 ) {
-		var sel = core.selectObjectByName(item, false)
-		var info = core.getSelectedObjectInfo(sel)
-		label(info.name, 0, 20, OBJ_COLOR)
-		var conName = iauNames[info.iauConstellation]
-		label(conName, 20, 18, CON_COLOR)
-		var conBounds = boundsRaDec[info.iauConstellation]
-		var objectPos = [info.ra, info.dec]
-		var posInt = mapObjectPosition(conBounds, objectPos)
-		label(getAscii(posInt), 20, 18, POS_COLOR)
-	}
-}
-
-
-
-// coordinate conversion functions
-function degToHMS(deg) {
+Conversions.prototype.degToHMS = function (deg) {
   var totalHours = deg / 15.0;
   var hours = Math.floor(totalHours);
   var totalMinutes = (totalHours - hours) * 60;
@@ -198,47 +84,125 @@ function degToHMS(deg) {
   var seconds = Math.floor((totalMinutes - minutes) * 60);
   return hours + "h" + minutes + "m" + seconds + "s";
 }
-function degToDMS(deg) {
-  var sign = (deg >= 0) ? "+" : "-";
-  deg = Math.abs(deg);
-  var degrees = Math.floor(deg);
-  var totalMinutes = (deg - degrees) * 60;
-  var minutes = Math.floor(totalMinutes);
-  var seconds = Math.floor((totalMinutes - minutes) * 60);
-  return sign + degrees + "d" + minutes + "m" + seconds + "s";
+
+// Calculation Class
+function Calculations(usePosExceptions) {
+  this.posExc = usePosExceptions || true;
+}
+Calculations.prototype.haversine = function (a1, d1, a2, d2) {
+  const alpha1 = conv.degToRad(a1);
+  const delta1 = conv.degToRad(d1);
+  const alpha2 = conv.degToRad(a2);
+  const delta2 = conv.degToRad(d2);
+
+  const sinSqd = (x) => Math.sin(x) ** 2;
+
+  const deltaDiff = delta2 - delta1;
+  const alphaDiff = alpha2 - alpha1;
+
+  const theta = 2 * Math.asin(
+    Math.sqrt(
+      sinSqd(deltaDiff / 2) +
+      Math.cos(delta1) * Math.cos(delta2) * sinSqd(alphaDiff / 2)
+    )
+  );
+
+  return theta;
 }
 
-// DEBUG: highlights on boundaries
-function highlightBounds(radec) {
-for (var key in radec) {
-    if (radec.hasOwnProperty(key)) {
-        var coordsPair = radec[key];
-        var coords1 = coordsPair[0];
-        var raDeg1 = coords1[0];
-        var decDeg1 = coords1[1];
-        if (raDeg1 < 0) {
-            raDeg1 += 360;
-        }
-        var raStr1 = degToHMS(raDeg1);
-        var decStr1 = degToDMS(decDeg1);
-        HighlightMgr.addPointRaDec(raStr1, decStr1);
+// Initialize helpers
+const ui = new UIHandler(globalXOffset);
+const conv = new Conversions();
+const calc = new Calculations(false);
 
-        var coords2 = coordsPair[1];
-        var raDeg2 = coords2[0];
-        var decDeg2 = coords2[1];
-        if (raDeg2 < 0) {
-            raDeg2 += 360;
-        }
-        var raStr2 = degToHMS(raDeg2);
-        var decStr2 = degToDMS(decDeg2);
-        HighlightMgr.addPointRaDec(raStr2, decStr2);
-    }
+// === Sun Position + Info ===
+const sun = core.selectObjectByName("Sun", false);
+const sunInfo = core.getSelectedObjectInfo(sun);
+
+// Label: Sun name
+ui.basicLabel(sunInfo.name, 0, 20, OBJ_COLOR);
+
+// Label: Constellation name
+const sunAbbr = sunInfo.iauConstellation;
+const sunConName = iauNames[sunAbbr] || sunAbbr;
+ui.basicLabel(sunConName, 20, 18, CON_COLOR);
+
+// Label: ASCII position in constellation
+const sunBounds = boundsRaDec[sunAbbr];
+if (sunBounds) {
+  const [[ra1, dec1], [ra2, dec2]] = sunBounds;
+  const totalDist = calc.haversine(ra1, dec1, ra2, dec2);
+  const objDist = calc.haversine(ra1, dec1, sunInfo.ra, sunInfo.dec);
+  const sunRelPos = Math.round((objDist / totalDist) * 31);
+  const sunAscii = ui.ASCIILabel(sunRelPos);
+  ui.basicLabel(sunAscii, 0, 16, POS_COLOR);
+} else {
+  ui.basicLabel("(No bounds)", 0, 16, "#888888");
 }
+
+// Sun rise/set time and daylight duration
+const sunRise = sunInfo.rise;
+const sunSet = sunInfo.set;
+
+function formatTime(t) {
+  const h = Math.floor(t);
+  const m = Math.floor((t - h) * 60);
+  return h + "h" + (m < 10 ? "0" : "") + m + "m";
 }
-highlightBounds(boundsRaDec)
+
+const riseStr = "Rise: " + formatTime(sunRise);
+const setStr = "Set: " + formatTime(sunSet);
+const dur = sunSet - sunRise;
+const durH = Math.floor(dur);
+const durM = Math.round((dur - durH) * 60);
+const durStr = "Daytime: " + durH + "h" + (durM < 10 ? "0" : "") + durM + "m";
+
+ui.basicLabel(riseStr, 10, 16, CON_COLOR);
+ui.basicLabel(setStr, 10, 16, CON_COLOR);
+ui.basicLabel(durStr, 10, 16, CON_COLOR);
+
+
+// Loop through planets
+const planets = ["Mercury", "Venus", "Mars", "Jupiter", "Saturn"];
+for (var i = 0; i < planets.length; i++) {
+  var object = planets[i];
+  const sel = core.selectObjectByName(object, false);
+  const info = core.getSelectedObjectInfo(sel);
+
+  ui.basicLabel(info.name, 0, 20, OBJ_COLOR);
+
+  const abbr = info.iauConstellation;
+  const conName = iauNames[abbr] || abbr;
+  ui.basicLabel(conName, 10, 18, CON_COLOR);
+
+  const bounds = boundsRaDec[abbr];
+  if (!bounds) {
+    ui.basicLabel("(No bounds)", 40, 16, "#ff0000");
+    continue;
+  }
+
+  const [[ra1, dec1], [ra2, dec2]] = bounds;
+  const objRa = info.ra;
+  const objDec = info.dec;
+
+  // Calculate total angular size of constellation area
+  const totalDist = calc.haversine(ra1, dec1, ra2, dec2);
+
+  // Calculate distance of object from lower bound
+  const objDist = calc.haversine(ra1, dec1, objRa, objDec);
+
+  // Normalize position to a 0–32 range for ASCII label
+  let relPos = Math.round((objDist / totalDist) * 31);
+
+  // Display ASCII bar
+  const asciiBar = ui.ASCIILabel(relPos);
+  ui.basicLabel(asciiBar, 0, 16, POS_COLOR);
+}
 
 
 
 
+// DEBUG: calc.haversine test cases
 
-
+// Psc E to Psc W
+//core.debug(calc.haversine(27,11.15,352.55, -3.21))
